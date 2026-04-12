@@ -75,7 +75,12 @@ def main() -> int:
     if args.output:
         Path(args.output).write_text(xml_content, encoding="utf-8")
     else:
-        print(xml_content)
+        if sys.stdout.isatty():
+            print(xml_content)
+        else:
+            # Redirected output should always be UTF-8 encoded bytes.
+            sys.stdout.buffer.write(xml_content.encode("utf-8"))
+            sys.stdout.buffer.write(b"\n")
     return OK
 
 

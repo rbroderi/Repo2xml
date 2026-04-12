@@ -1,6 +1,6 @@
 [project]
 name = "repo2xml"
-version = "2026.4.12.0"
+version = "2026.4.12.1"
 description = "Bundle a repository into a single XML file for LLMs."
 readme = "README.md"
 license = "Apache-2.0"
