@@ -1,0 +1,131 @@
+name: Create Release From Tag
+"on":
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (for example: v3.0.0)"
+        required: true
+        type: string
+permissions:
+  contents: write
+jobs:
+  build-sdist:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+      - name: Build sdist
+        run: uv build --no-sources --sdist
+      - name: Upload sdist artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-sdist
+          path: dist/*.tar.gz
+  build-wheels:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.13", "3.14"]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+      - name: Build wheel
+        run: uv build --no-sources --wheel
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-wheel-${{ matrix.python-version }}
+          path: dist/*.whl
+  build-windows-exe:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+      - name: Install project with dev dependencies
+        run: uv sync --extra dev
+      - name: Build PyInstaller bundle
+        run: uv run pyinstaller build.spec
+      - name: Create zip asset
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release-assets | Out-Null
+          Compress-Archive -Path dist/repo2xml.exe -DestinationPath release-assets/repo2xml-windows-x64.zip -Force
+      - name: Upload exe artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-exe-windows-x64
+          path: release-assets/repo2xml-windows-x64.zip
+  create-release:
+    needs: [build-sdist, build-wheels, build-windows-exe]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download sdist artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: release-sdist
+          path: dist/
+      - name: Download wheel artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: release-wheel-*
+          path: dist/wheels
+      - name: Download exe artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: release-exe-windows-x64
+          path: dist/exe
+      - name: Prepare release assets
+        run: |
+          mkdir -p dist/release
+          cp dist/*.tar.gz dist/release/
+          cp dist/exe/*.zip dist/release/
+          python - <<'PY'
+          import hashlib
+          import shutil
+          from pathlib import Path
+
+          seen = set()
+          out = Path("dist/release")
+          for wheel in sorted(Path("dist/wheels").rglob("*.whl")):
+              digest = hashlib.sha256(wheel.read_bytes()).hexdigest()
+              if digest in seen:
+                  continue
+              seen.add(digest)
+              shutil.copy2(wheel, out / wheel.name)
+          PY
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          generate_release_notes: true
+          make_latest: true
+          files: dist/release/*
