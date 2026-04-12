@@ -1,0 +1,26 @@
+name: Typecheck
+"on":
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  typecheck:
+    name: Type analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
+      - name: Install project with dev dependencies
+        run: uv sync --extra dev
+      - name: Run basedpyright
+        run: uvx basedpyright

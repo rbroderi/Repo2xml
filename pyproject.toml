@@ -1,0 +1,55 @@
+[project]
+name = "repo2xml"
+version = "2026.4.12.0"
+description = "Bundle a repository into a single XML file for LLMs."
+readme = "README.md"
+license = "Apache-2.0"
+authors = [{ name = "rbroderi", email = "rbroderi@gmail.com" }]
+requires-python = ">=3.13"
+classifiers = [
+  "License :: OSI Approved :: Apache Software License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.13",
+]
+dependencies = ["beartype>=0.22.9", "pathspec>=0.12.1"]
+
+[project.scripts]
+repo2xml = "repo2xml.__main__:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=9.0.3", "pytest-cov>=7.1.0", "pytest-sugar>=1.1.1"]
+
+[build-system]
+requires = ["uv_build>=0.11.6"]
+build-backend = "uv_build"
+
+[tool.basedpyright]
+venvPath = "."
+venv = ".venv"
+include = ["src", "src/repo2xml/tests"]
+pythonVersion = "3.13"
+reportUnusedCallResult = "none"
+reportAny = "none"
+reportExplicitAny = "none"
+reportImplicitStringConcatenation = "none"
+reportUnusedFunction = "none"
+reportMissingParameterType = "none"
+reportUnknownParameterType = "none"
+reportUnknownVariableType = "none"
+reportUnknownArgumentType = "none"
+reportUnknownMemberType = "none"
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.ruff.lint.isort]
+force-single-line = true
+
+[tool.coverage.run]
+source = ["src/repo2xml"]
+omit = ["src/repo2xml/tests/*"]
+
+[tool.ty.src]
+exclude = ["typings"]

@@ -1,0 +1,26 @@
+name: Tests
+"on":
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  tests:
+    name: Test suite with coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
+      - name: Install project with dev dependencies
+        run: uv sync --extra dev
+      - name: Run tests with coverage
+        run: uv run pytest --doctest-modules --cov=src/repo2xml --cov-report=term-missing src/repo2xml
