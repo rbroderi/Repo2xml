@@ -1,6 +1,9 @@
 """repo2xml — bundle a repository into a single XML file for LLMs."""
 
-from repo2xml._bundler import RepoBundler
-from repo2xml._bundler import bundle_repo
+# ruff: noqa F402
+from beartype.claw import beartype_this_package
 
-__all__ = ["RepoBundler", "bundle_repo"]
+beartype_this_package()
+
+from repo2xml.bundler import RepoBundler as RepoBundler
+from repo2xml.bundler import bundle_repo as bundle_repo

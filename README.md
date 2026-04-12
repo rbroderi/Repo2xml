@@ -1,12 +1,15 @@
 # repo2xml
 
-Bundle a complete repository into a single XML file that ChatGPT or other LLMs can read — inspired by [repomix](https://github.com/yamadashy/repomix).
+Bundle a complete repository into a single XML file that ChatGPT
+or other LLMs can read, inspired by [repomix](https://github.com/yamadashy/repomix).
 
 ## Features
 
-- Walks any directory tree and collects all text files
+- Walks any directory tree and bundles readable files into XML
 - Respects `.gitignore` rules (via [pathspec](https://github.com/cpburnz/python-pathspec))
-- Skips binary files and common build/cache directories automatically
+- Uses layered file detection: Magika, then `puremagic` MIME, then `identify`
+- Converts supported non-text files to Markdown via `markitdown`
+- Skips zero-byte files, oversized files, and common build/cache directories automatically
 - Outputs a well-formed XML document with a directory tree and full file contents
 - CLI tool (`repo2xml`) and importable Python API
 
@@ -28,13 +31,13 @@ uv tool install repo2xml
 
 ```bash
 # Bundle current directory to stdout
-repo2xml
+repo2xml --repo-path .
 
 # Bundle a specific directory and save to a file
-repo2xml /path/to/repo -o repo.xml
+repo2xml --repo-path /path/to/repo -o repo.xml
 
 # Skip .gitignore and add extra exclusions
-repo2xml --no-gitignore --ignore "*.log" --ignore "tests/"
+repo2xml --repo-path /path/to/repo --no-gitignore --ignore "*.log" --ignore "tests/"
 ```
 
 ### Python API
@@ -47,7 +50,7 @@ xml = bundle_repo("/path/to/repo")
 
 # More control
 bundler = RepoBundler(
-    repo_path,
+    "/path/to/repo",
     respect_gitignore=True,
     max_file_size=500_000,
     extra_ignore_patterns=["*.csv", "data/"],
@@ -93,8 +96,12 @@ uv sync --extra dev
 
 # Run tests
 uv run pytest --doctest-modules
+just test-cov
 
 # Lint and format
 uvx ruff check src
 uvx ruff format src
+
+# Build one-file executable via PyInstaller
+just build
 ```

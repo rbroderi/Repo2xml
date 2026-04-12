@@ -1,3 +1,5 @@
+set shell := ["powershell", "-NoProfile", "-Command"]
+
 _default:
     @just --list
 
@@ -18,7 +20,12 @@ test:
 test-cov:
     uv run pytest --doctest-modules --cov=src/repo2xml --cov-report=term-missing
 
-import '.justfiles/clean.just'
+# Build standalone executable with PyInstaller
+build:
+    if (Test-Path build) { Remove-Item -Recurse -Force build }
+    if (Test-Path dist) { Remove-Item -Recurse -Force dist }
+    uv run pyinstaller build.spec
+
 import '.justfiles/prek.just'
 import '.justfiles/github_actions.just'
 import '.justfiles/license.just'

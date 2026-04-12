@@ -1,5 +1,3 @@
-set shell := ["powershell", "-NoProfile", "-Command"]
-
 # Select and download a software license from scancode-licensedb.
 license:
     $indexUrl = 'https://scancode-licensedb.aboutcode.org/index.json'; \

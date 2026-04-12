@@ -1,0 +1,35 @@
+name: Release PyInstaller Bundle
+"on":
+  release:
+    types: [published]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build-windows-bundle:
+    name: Build Windows one-file executable
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
+      - name: Install project with dev dependencies
+        run: uv sync --extra dev
+      - name: Build PyInstaller bundle
+        run: uv run pyinstaller build.spec
+      - name: Create zip asset
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release-assets | Out-Null
+          Compress-Archive -Path dist/repo2xml.exe -DestinationPath release-assets/repo2xml-windows-x64.zip -Force
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/repo2xml-windows-x64.zip
+          fail_on_unmatched_files: true

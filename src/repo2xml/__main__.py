@@ -1,12 +1,14 @@
 """Command-line interface for repo2xml."""
 
-from __future__ import annotations
-
 import argparse
 import sys
 from pathlib import Path
 
-from repo2xml._bundler import RepoBundler
+from repo2xml.bundler import BundleReadError
+from repo2xml.bundler import RepoBundler
+
+OK = 0
+ERROR = 1
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -15,10 +17,10 @@ def _build_parser() -> argparse.ArgumentParser:
         description="Bundle a repository into a single XML file for LLMs.",
     )
     parser.add_argument(
-        "repo_path",
-        nargs="?",
-        default=".",
-        help="Path to the repository to bundle (default: current directory)",
+        "-p",
+        "--repo-path",
+        help="Path to the repository to bundle",
+        required=True,
     )
     parser.add_argument(
         "-o",
@@ -48,7 +50,7 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main() -> None:
+def main() -> int:
     """Entry point for the repo2xml CLI."""
     parser = _build_parser()
     args = parser.parse_args()
@@ -56,7 +58,7 @@ def main() -> None:
     repo_path = Path(args.repo_path).resolve()
     if not repo_path.is_dir():
         print(f"error: {repo_path} is not a directory", file=sys.stderr)
-        sys.exit(1)
+        return ERROR
 
     bundler = RepoBundler(
         repo_path,
@@ -64,13 +66,18 @@ def main() -> None:
         max_file_size=args.max_file_size,
         extra_ignore_patterns=args.ignore,
     )
-    xml_content = bundler.bundle()
+    try:
+        xml_content = bundler.bundle()
+    except BundleReadError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return ERROR
 
     if args.output:
         Path(args.output).write_text(xml_content, encoding="utf-8")
     else:
         print(xml_content)
+    return OK
 
 
-if __name__ == "__main__":
-    main()
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())

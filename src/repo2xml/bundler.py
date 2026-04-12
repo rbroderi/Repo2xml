@@ -1,12 +1,16 @@
 """Core repository bundling logic."""
 
-from __future__ import annotations
-
 import xml.etree.ElementTree as ET
+from functools import lru_cache
 from pathlib import Path
+from typing import cast
 
 import pathspec
-
+from identify.identify import tags_from_path
+from magika import Magika
+from markitdown import MarkItDown
+from puremagic import PureError
+from puremagic import from_file as puremagic_from_file
 
 _ALWAYS_EXCLUDE: frozenset[str] = frozenset(
     {
@@ -26,28 +30,138 @@ _ALWAYS_EXCLUDE: frozenset[str] = frozenset(
     }
 )
 
+_TEXT_ENCODINGS: tuple[str, ...] = (
+    "utf-8",
+    "utf-8-sig",
+    "cp1252",
+    "latin-1",
+)
+
+_TEXT_APPLICATION_MIME_TYPES: frozenset[str] = frozenset(
+    {
+        "application/json",
+        "application/xml",
+        "application/ecmascript",
+        "application/javascript",
+        "application/x-javascript",
+        "application/rtf",
+        "application/x-rtf",
+        "application/x-tex",
+        "application/x-texinfo",
+        "application/x-latex",
+        "application/x-tcl",
+        "application/x-csh",
+        "application/x-ksh",
+        "application/x-lisp",
+        "application/x-sh",
+        "application/x-shellscript",
+        "application/x-wais-source",
+        "application/x-yaml",
+        "application/yaml",
+        "application/toml",
+        "application/sql",
+    }
+)
+
+
+class BundleReadError(RuntimeError):
+    """Raised when a repository file cannot be read during bundling."""
+
+
+@lru_cache(maxsize=1)
+def _get_magika() -> Magika:
+    """Return a cached Magika instance for file type detection."""
+    return Magika()
+
 
 def _load_gitignore_spec(repo_path: Path) -> pathspec.PathSpec:
     """Load .gitignore patterns from *repo_path* and return a :class:`pathspec.PathSpec`."""
     gitignore = repo_path / ".gitignore"
     if gitignore.exists():
-        patterns = gitignore.read_text(encoding="utf-8", errors="replace").splitlines()
+        try:
+            patterns = gitignore.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError as exc:
+            msg = f"failed to read {gitignore}: {exc}"
+            raise BundleReadError(msg) from exc
     else:
         patterns = []
     return pathspec.PathSpec.from_lines("gitignore", patterns)
 
 
-def _is_text_file(path: Path, max_check_bytes: int = 8192) -> bool:
-    """Return ``True`` if *path* is likely a UTF-8 text file."""
+def _is_text_file(path: Path) -> bool:
+    """Return ``True`` if *path* is likely a text file."""
     try:
-        with path.open("rb") as fh:
-            chunk = fh.read(max_check_bytes)
-        if b"\x00" in chunk:
-            return False
-        chunk.decode("utf-8")
+        result = _get_magika().identify_path(path)
+    except OSError as exc:
+        msg = f"failed to read {path}: {exc}"
+        raise BundleReadError(msg) from exc
+
+    if result.status.value != "ok":
+        msg = f"failed to read {path}: magika status {result.status.value}"
+        raise BundleReadError(msg)
+
+    if result.prediction.output.is_text:
         return True
-    except (OSError, UnicodeDecodeError):
+
+    try:
+        mime = puremagic_from_file(path, mime=True)
+    except (PureError, OSError, ValueError):
+        mime = ""
+    mime = mime.lower()
+    if mime.startswith("text/"):
+        return True
+    if mime in _TEXT_APPLICATION_MIME_TYPES:
+        return True
+    if mime.endswith("+json") or mime.endswith("+xml") or mime.endswith("+yaml"):
+        return True
+
+    try:
+        tags = tags_from_path(str(path))
+    except (OSError, ValueError):
+        tags = set()
+
+    if "text" in tags:
+        return True
+    if "binary" in tags:
         return False
+
+    return False
+
+
+def _read_text_file(path: Path) -> str:
+    """Read *path* using UTF-8 first, then common fallback encodings."""
+    try:
+        data = path.read_bytes()
+    except OSError as exc:
+        msg = f"failed to read {path}: {exc}"
+        raise BundleReadError(msg) from exc
+
+    # Decode UTF-16 only when BOM is present to avoid false positives on 8-bit text.
+    if data.startswith((b"\xff\xfe", b"\xfe\xff")):
+        try:
+            return data.decode("utf-16")
+        except UnicodeDecodeError:
+            pass
+
+    for encoding in _TEXT_ENCODINGS:
+        try:
+            return data.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+
+    msg = f"failed to decode {path} with supported encodings"
+    raise BundleReadError(msg)
+
+
+def _convert_file_to_markdown(path: Path, converter: MarkItDown) -> str | None:
+    """Convert *path* to Markdown when supported; return ``None`` when unsupported."""
+    try:
+        result = converter.convert_local(str(path))
+    except Exception:
+        return None
+
+    markdown = (result.markdown or result.text_content or "").strip()
+    return markdown or None
 
 
 def _build_tree_str(files: list[Path], repo_path: Path) -> str:
@@ -61,8 +175,10 @@ def _build_tree_str(files: list[Path], repo_path: Path) -> str:
         for part in rel.parts[:-1]:
             existing = node.get(part)
             if not isinstance(existing, dict):
-                node[part] = {}
-            node = node[part]  # type: ignore[assignment]
+                child: dict[str, object] = {}
+                node[part] = child
+                existing = child
+            node = cast(dict[str, object], existing)
         node[rel.parts[-1]] = None
 
     lines: list[str] = [repo_path.name + "/"]
@@ -76,7 +192,7 @@ def _build_tree_str(files: list[Path], repo_path: Path) -> str:
             lines.append(indent + branch + name + suffix)
             if isinstance(val, dict):
                 new_indent = indent + ("    " if is_last else "│   ")
-                _render(val, new_indent)
+                _render(cast(dict[str, object], val), new_indent)
 
     _render(tree, "")
     return "\n".join(lines)
@@ -102,24 +218,16 @@ class RepoBundler:
         max_file_size: int = 1_000_000,
         extra_ignore_patterns: list[str] | None = None,
     ) -> None:
+        self._repo_path: Path
+        self._respect_gitignore: bool
+        self._max_file_size: int
         self._repo_path = repo_path.resolve()
         self._respect_gitignore = respect_gitignore
         self._max_file_size = max_file_size
         self._extra_spec: pathspec.PathSpec = pathspec.PathSpec.from_lines("gitignore", extra_ignore_patterns or [])
 
-    def collect_files(self) -> list[Path]:
-        """Return a sorted list of text files to include in the bundle.
-
-        >>> import tempfile, pathlib
-        >>> with tempfile.TemporaryDirectory() as d:
-        ...     p = pathlib.Path(d)
-        ...     _ = (p / "a.py").write_text("x = 1\\n")
-        ...     _ = (p / ".gitignore").write_text("secret.txt\\n")
-        ...     _ = (p / "secret.txt").write_text("s\\n")
-        ...     files = RepoBundler(p).collect_files()
-        ...     sorted(f.name for f in files)
-        ['.gitignore', 'a.py']
-        """
+    def _candidate_files(self) -> list[Path]:
+        """Return candidate files after ignore and size filtering."""
         gitignore_spec = (
             _load_gitignore_spec(self._repo_path)
             if self._respect_gitignore
@@ -137,8 +245,32 @@ class RepoBundler:
                 continue
             if self._extra_spec.match_file(rel_str):
                 continue
-            if path.stat().st_size > self._max_file_size:
+            try:
+                file_size = path.stat().st_size
+            except OSError:
                 continue
+            if file_size == 0:
+                continue
+            if file_size > self._max_file_size:
+                continue
+            results.append(path)
+        return results
+
+    def collect_files(self) -> list[Path]:
+        """Return a sorted list of text files to include in the bundle.
+
+        >>> import tempfile, pathlib
+        >>> with tempfile.TemporaryDirectory() as d:
+        ...     p = pathlib.Path(d)
+        ...     _ = (p / "a.py").write_text("x = 1\\n")
+        ...     _ = (p / ".gitignore").write_text("secret.txt\\n")
+        ...     _ = (p / "secret.txt").write_text("s\\n")
+        ...     files = RepoBundler(p).collect_files()
+        ...     sorted(f.name for f in files)
+        ['.gitignore', 'a.py']
+        """
+        results: list[Path] = []
+        for path in self._candidate_files():
             if not _is_text_file(path):
                 continue
             results.append(path)
@@ -151,8 +283,8 @@ class RepoBundler:
         >>> with tempfile.TemporaryDirectory() as d:
         ...     p = pathlib.Path(d)
         ...     (p / "src").mkdir()
-        ...     _ = (p / "src" / "main.py").write_text("")
-        ...     _ = (p / "README.md").write_text("")
+        ...     _ = (p / "src" / "main.py").write_text("print('x')\\n")
+        ...     _ = (p / "README.md").write_text("# Readme\\n")
         ...     bundler = RepoBundler(p)
         ...     files = bundler.collect_files()
         ...     tree = bundler.build_file_tree(files)
@@ -172,7 +304,19 @@ class RepoBundler:
         ...     xml.startswith("<?xml")
         True
         """
-        files = self.collect_files()
+        included_files: list[tuple[Path, str]] = []
+        converter = MarkItDown()
+        for file_path in self._candidate_files():
+            if _is_text_file(file_path):
+                content = _read_text_file(file_path)
+            else:
+                markdown = _convert_file_to_markdown(file_path, converter)
+                if markdown is None:
+                    continue
+                content = markdown
+            included_files.append((file_path, content))
+
+        files = [path for path, _ in included_files]
         tree_str = self.build_file_tree(files)
 
         root = ET.Element("repository")
@@ -197,13 +341,9 @@ class RepoBundler:
         ET.SubElement(root, "directory_structure").text = tree_str
 
         files_elem = ET.SubElement(root, "files")
-        for file_path in files:
+        for file_path, content in included_files:
             rel = str(file_path.relative_to(self._repo_path))
             file_elem = ET.SubElement(files_elem, "file", path=rel)
-            try:
-                content = file_path.read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                content = ""
             ET.SubElement(file_elem, "content").text = content
 
         ET.indent(root, space="  ")
