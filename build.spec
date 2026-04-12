@@ -1,7 +1,7 @@
 from PyInstaller.utils.hooks import collect_data_files
 from PyInstaller.utils.hooks import collect_submodules
 
-data = collect_data_files("magika")
+datas = collect_data_files("magika")
 hiddenimports = collect_submodules("markitdown")
 
 
@@ -9,7 +9,7 @@ a = Analysis(
     ["src/repo2xml/__main__.py"],
     pathex=["src"],
     binaries=[],
-    data=data,
+    datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
@@ -25,7 +25,7 @@ exe = EXE(
     pyz,
     a.scripts,
     a.binaries,
-    a.data,
+    a.datas,
     [],
     exclude_binaries=False,
     name="repo2xml",

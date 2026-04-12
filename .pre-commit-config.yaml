@@ -55,6 +55,7 @@ repos:
     rev: v1.45.0
     hooks:
       - id: typos
+        args: []
   - repo: https://github.com/executablebooks/mdformat
     rev: 1.0.0
     hooks:

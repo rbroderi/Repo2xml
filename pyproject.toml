@@ -67,3 +67,6 @@ omit = ["src/repo2xml/tests/*"]
 
 [tool.ty.src]
 exclude = ["typings"]
+
+[tool.typos.default.extend-words]
+datas = "datas"
