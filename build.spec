@@ -1,7 +1,7 @@
-# -*- mode: python ; coding: utf-8 -*-
-
+from PyInstaller.utils.hooks import collect_data_files
 from PyInstaller.utils.hooks import collect_submodules
 
+data = collect_data_files("magika")
 hiddenimports = collect_submodules("markitdown")
 
 
@@ -9,7 +9,7 @@ a = Analysis(
     ["src/repo2xml/__main__.py"],
     pathex=["src"],
     binaries=[],
-    data=[],
+    data=data,
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
