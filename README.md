@@ -125,6 +125,10 @@ uvx ruff format src
 just docs-build
 just docs-serve
 
+# Build and serve automatic Sphinx API docs
+just sphinx-build
+just sphinx-serve
+
 # Build one-file executable via PyInstaller
 just build
 ```

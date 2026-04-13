@@ -1,0 +1,40 @@
+name: Sphinx API Docs
+"on":
+  pull_request:
+    paths:
+      - src/**
+      - docs_sphinx/**
+      - justfile
+      - pyproject.toml
+      - uv.lock
+  push:
+    branches: [main]
+    paths:
+      - src/**
+      - docs_sphinx/**
+      - justfile
+      - pyproject.toml
+      - uv.lock
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+      - name: Build automatic Sphinx API docs
+        run: |
+          uv sync --extra docs
+          rm -rf docs_sphinx/apidoc
+          rm -rf docs_sphinx/generated
+          SPHINX_APIDOC_OPTIONS=show-inheritance uv run sphinx-apidoc -f --remove-old -o docs_sphinx/apidoc src/repo2xml src/repo2xml/tests
+          find docs_sphinx/apidoc -name '*.rst' -type f -exec sed -i '/^[[:space:]]*:members:$/d;/^[[:space:]]*:undoc-members:$/d' {} +
+          uv run sphinx-build -b html docs_sphinx docs_sphinx/_build/html

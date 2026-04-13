@@ -13,6 +13,10 @@ env/
 coverage.xml
 htmlcov/
 site/
+docs/api/
+docs_sphinx/_build/
+docs_sphinx/apidoc/
+docs_sphinx/generated/
 build/
 dist/
 .eggs/

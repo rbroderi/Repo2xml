@@ -36,7 +36,7 @@ dev = [
   "pytest-sugar>=1.1.1",
   "rust-just>=1.49.0",
 ]
-docs = ["zensical>=0.0.32"]
+docs = ["sphinx>=8.2.3", "sphinx-autobuild>=2024.10.3", "zensical>=0.0.32"]
 
 [build-system]
 requires = ["uv_build>=0.11.6"]

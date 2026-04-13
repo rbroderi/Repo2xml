@@ -254,6 +254,7 @@ class RepoBundler:
     """
 
     DEFAULT_MAX_FILE_SIZE: Final[Annotated[int, Bytes]] = 1 * 1024 * 1024
+    #: Default maximum file size in bytes for included files.
 
     def __init__(
         self,
@@ -264,13 +265,29 @@ class RepoBundler:
         extra_ignore_patterns: list[str] | None = None,
         include_patterns: list[str] | None = None,
     ) -> None:
+        """Initialize the repository bundler.
+
+        Args:
+            repo_path: Path to the repository root.
+            respect_gitignore: Whether to respect patterns in ``.gitignore``.
+            max_file_size: Maximum file size in bytes to include in output.
+            extra_ignore_patterns: Additional gitignore-style patterns to exclude.
+            include_patterns: Patterns that override default and extra excludes.
+        """
         self._repo_path: Path = repo_path.resolve()
+        #: Absolute path to the repository root.
         self._respect_gitignore: bool = respect_gitignore
+        #: Whether ``.gitignore`` patterns are applied while collecting files.
         self._max_file_size: int = max_file_size
+        #: Maximum file size in bytes accepted into the bundle.
         self._extra_ignore_patterns: list[str] = extra_ignore_patterns or []
+        #: Additional user-defined ignore patterns.
         self._include_patterns: list[str] = include_patterns or []
+        #: Include patterns that override default and extra excludes.
         self._extra_spec: pathspec.PathSpec = pathspec.PathSpec.from_lines("gitignore", extra_ignore_patterns or [])
+        #: Compiled matcher for extra ignore patterns.
         self._include_spec: pathspec.PathSpec = pathspec.PathSpec.from_lines("gitignore", include_patterns or [])
+        #: Compiled matcher for include override patterns.
 
     def _candidate_files(self) -> list[Path]:
         """Return candidate files after ignore and size filtering."""
