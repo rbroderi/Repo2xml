@@ -17,6 +17,51 @@ from repo2xml.bundler import BundleReadError
 from repo2xml.bundler import RepoBundler
 
 
+def test_main_passes_include_patterns_to_bundler(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    (tmp_path / "forward.py").write_text("x = 1\n", encoding="utf-8")
+    out_file = tmp_path / "bundle.xml"
+    captured: dict[str, list[str]] = {}
+
+    class _FakeBundler:
+        def __init__(
+            self,
+            repo_path: Path,
+            *,
+            respect_gitignore: bool,
+            max_file_size: int,
+            extra_ignore_patterns: list[str],
+            include_patterns: list[str],
+        ) -> None:
+            del repo_path, respect_gitignore, max_file_size, extra_ignore_patterns
+            captured["include_patterns"] = include_patterns
+
+        def bundle(self, *, show_progress: bool = False) -> str:
+            del show_progress
+            return '<?xml version="1.0" encoding="UTF-8"?>\n<repository/>'
+
+    monkeypatch.setattr(cli, "RepoBundler", _FakeBundler)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "repo2xml",
+            "--repo-path",
+            str(tmp_path),
+            "--include",
+            ".git/**",
+            "-i",
+            "*.log",
+            "-o",
+            str(out_file),
+        ],
+    )
+
+    result = cli.main()
+
+    assert result == cli.OK
+    assert captured["include_patterns"] == [".git/**", "*.log"]
+
+
 def test_main_version_flag_prints_version(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -191,6 +236,46 @@ def test_main_prints_xml_when_stdout_is_tty(tmp_path: Path, monkeypatch: pytest.
     output = fake_stdout.getvalue()
     assert "<?xml" in output
     assert "tty.py" in output
+
+
+def test_main_prints_excluded_paths_in_interactive_console(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    (tmp_path / "excluded.py").write_text("x = 1\n", encoding="utf-8")
+
+    class _TtyStderr(io.StringIO):
+        @override
+        def isatty(self) -> bool:
+            return True
+
+    fake_stderr = _TtyStderr()
+    out_file = tmp_path / "bundle.xml"
+    monkeypatch.setattr(sys, "stderr", fake_stderr)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "repo2xml",
+            "--repo-path",
+            str(tmp_path),
+            "--ignore",
+            "*.tmp",
+            "--include",
+            "*.keep",
+            "--no-progress",
+            "-o",
+            str(out_file),
+        ],
+    )
+
+    result = cli.main()
+
+    assert result == cli.OK
+    stderr_output = fake_stderr.getvalue()
+    assert "Excluding directories:" in stderr_output
+    assert ".git" in stderr_output
+    assert "Extra exclude patterns:" in stderr_output
+    assert "*.tmp" in stderr_output
+    assert "Include override patterns:" in stderr_output
+    assert "*.keep" in stderr_output
 
 
 def test_main_enables_progress_when_stderr_is_tty(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

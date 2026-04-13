@@ -149,6 +149,24 @@ def test_extra_ignore_patterns() -> None:
         assert "exclude.log" not in names
 
 
+def test_include_patterns_override_default_and_extra_excludes() -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        repo = Path(tmpdir)
+        (repo / ".git").mkdir()
+        (repo / ".git" / "keep.py").write_text("x = 1\n", encoding="utf-8")
+        (repo / "keep.log").write_text("log\n", encoding="utf-8")
+
+        files = RepoBundler(
+            repo,
+            extra_ignore_patterns=["*.log"],
+            include_patterns=[".git/**", "*.log"],
+        ).collect_files()
+
+        rel_paths = {f.relative_to(repo) for f in files}
+        assert Path(".git") / "keep.py" in rel_paths
+        assert Path("keep.log") in rel_paths
+
+
 def test_max_file_size_excludes_large_files() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         repo = Path(tmpdir)

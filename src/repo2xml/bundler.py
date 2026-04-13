@@ -70,9 +70,12 @@ class TextApplicationMimeTypes(StrEnum, metaclass=ContainsEnumMeta):
     SQL = "application/sql"
 
 
-class AlwaysExclude(StrEnum, metaclass=ContainsEnumMeta):
+class DefaultExclude(StrEnum, metaclass=ContainsEnumMeta):
     GIT = ".git"
     VENV = "venv"
+    DOTVENV = ".venv"
+    TYPINGS = "typings"
+    UV_LOCK = "uv.lock"
     PY_CACHE = "__pycache__"
     PYTEST_CACHE = ".pytest_cache"
     MYPY_CACHE = ".mypy_cache"
@@ -259,12 +262,15 @@ class RepoBundler:
         respect_gitignore: bool = True,
         max_file_size: Annotated[int, Bytes] = DEFAULT_MAX_FILE_SIZE,
         extra_ignore_patterns: list[str] | None = None,
+        include_patterns: list[str] | None = None,
     ) -> None:
         self._repo_path: Path = repo_path.resolve()
         self._respect_gitignore: bool = respect_gitignore
         self._max_file_size: int = max_file_size
         self._extra_ignore_patterns: list[str] = extra_ignore_patterns or []
+        self._include_patterns: list[str] = include_patterns or []
         self._extra_spec: pathspec.PathSpec = pathspec.PathSpec.from_lines("gitignore", extra_ignore_patterns or [])
+        self._include_spec: pathspec.PathSpec = pathspec.PathSpec.from_lines("gitignore", include_patterns or [])
 
     def _candidate_files(self) -> list[Path]:
         """Return candidate files after ignore and size filtering."""
@@ -278,12 +284,13 @@ class RepoBundler:
             if not path.is_file():
                 continue
             rel = path.relative_to(self._repo_path)
-            if any(part in AlwaysExclude for part in rel.parts):
-                continue
             rel_str = str(rel)
+            is_included = self._include_spec.match_file(rel_str)
+            if any(part in DefaultExclude for part in rel.parts) and not is_included:
+                continue
             if gitignore_spec.match_file(rel_str):
                 continue
-            if self._extra_spec.match_file(rel_str):
+            if self._extra_spec.match_file(rel_str) and not is_included:
                 continue
             try:
                 file_size = path.stat().st_size
@@ -398,6 +405,10 @@ class RepoBundler:
         for pattern in self._extra_ignore_patterns:
             ET.SubElement(extra_patterns_elem, "pattern").text = pattern
 
+        include_patterns_elem = ET.SubElement(bundler_settings, "include_patterns")
+        for pattern in self._include_patterns:
+            ET.SubElement(include_patterns_elem, "pattern").text = pattern
+
         summary = ET.SubElement(root, "file_summary")
         ET.SubElement(summary, "purpose").text = (
             "This file is a merged representation of the entire codebase, "
@@ -434,6 +445,7 @@ def bundle_repo(
     respect_gitignore: bool = True,
     max_file_size: int = RepoBundler.DEFAULT_MAX_FILE_SIZE,
     extra_ignore_patterns: list[str] | None = None,
+    include_patterns: list[str] | None = None,
 ) -> str:
     """Bundle a repository into a single XML string.
 
@@ -445,6 +457,7 @@ def bundle_repo(
         respect_gitignore: Whether to respect ``.gitignore`` rules.
         max_file_size: Maximum file size in bytes to include.
         extra_ignore_patterns: Additional gitignore-style patterns to exclude.
+        include_patterns: Patterns that override default and extra excludes.
 
     Returns:
         The XML representation of the repository as a string.
@@ -462,6 +475,7 @@ def bundle_repo(
         respect_gitignore=respect_gitignore,
         max_file_size=max_file_size,
         extra_ignore_patterns=extra_ignore_patterns,
+        include_patterns=include_patterns,
     )
     xml_content = bundler.bundle()
     if output_path is not None:
