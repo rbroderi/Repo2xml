@@ -494,7 +494,7 @@ def test_read_text_file_raises_when_all_decoders_fail(
         target = Path(tmpdir) / "bad.txt"
         target.write_bytes(b"\xff\xfe\xff")
 
-        monkeypatch.setattr("repo2xml.bundler._TEXT_ENCODINGS", ())
+        monkeypatch.setattr("repo2xml.bundler.TextEncodings", ())
 
         with pytest.raises(BundleReadError, match="failed to decode"):
             _read_text_file(target)
@@ -555,3 +555,79 @@ def test_collect_files_skips_file_when_stat_fails(
         names = [f.name for f in files]
         assert "good.py" in names
         assert "bad.py" not in names
+
+
+def test_bundle_uses_alive_progress_with_candidate_count(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        repo = Path(tmpdir)
+        files = [repo / "a.py", repo / "b.py"]
+        for file in files:
+            file.write_text("x = 1\n", encoding="utf-8")
+
+        bundler = RepoBundler(repo)
+        monkeypatch.setattr(bundler, "_candidate_files", lambda: files)
+
+        def _always_text(_path: Path) -> bool:
+            return True
+
+        def _read_stub(_path: Path) -> str:
+            return "x = 1\n"
+
+        monkeypatch.setattr("repo2xml.bundler._is_text_file", _always_text)
+        monkeypatch.setattr("repo2xml.bundler._read_text_file", _read_stub)
+
+        calls: dict[str, int] = {"total": 0, "ticks": 0}
+
+        class _FakeAliveBar:
+            def __init__(self, total: int, **_kwargs: Any) -> None:
+                calls["total"] = total
+
+            def __enter__(self) -> Callable[[], None]:
+                def _tick() -> None:
+                    calls["ticks"] += 1
+
+                return _tick
+
+            def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
+                del exc_type, exc, tb
+
+        monkeypatch.setattr("repo2xml.bundler.alive_bar", _FakeAliveBar)
+
+        xml = bundler.bundle(show_progress=True)
+
+        assert calls["total"] == 2
+        assert calls["ticks"] == 2
+        assert "a.py" in xml
+        assert "b.py" in xml
+
+
+def test_bundle_without_progress_does_not_create_alive_bar(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        repo = Path(tmpdir)
+        file = repo / "a.py"
+        file.write_text("x = 1\n", encoding="utf-8")
+
+        bundler = RepoBundler(repo)
+        monkeypatch.setattr(bundler, "_candidate_files", lambda: [file])
+
+        def _always_text(_path: Path) -> bool:
+            return True
+
+        def _read_stub(_path: Path) -> str:
+            return "x = 1\n"
+
+        monkeypatch.setattr("repo2xml.bundler._is_text_file", _always_text)
+        monkeypatch.setattr("repo2xml.bundler._read_text_file", _read_stub)
+
+        def _unexpected_alive_bar(*_args: Any, **_kwargs: Any) -> Any:
+            raise AssertionError("alive_bar should not be called")
+
+        monkeypatch.setattr("repo2xml.bundler.alive_bar", _unexpected_alive_bar)
+
+        xml = bundler.bundle(show_progress=False)
+
+        assert "a.py" in xml

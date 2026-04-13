@@ -66,8 +66,9 @@ def main() -> int:
         max_file_size=args.max_file_size,
         extra_ignore_patterns=args.ignore,
     )
+    show_progress = sys.stderr.isatty()
     try:
-        xml_content = bundler.bundle()
+        xml_content = bundler.bundle(show_progress=show_progress)
     except BundleReadError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return ERROR

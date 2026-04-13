@@ -1,67 +1,74 @@
 """Core repository bundling logic."""
 
+import sys
 import xml.etree.ElementTree as ET
+from enum import EnumMeta
+from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 from typing import cast
+from typing import override
 
 import pathspec
+from alive_progress import alive_bar
 from identify.identify import tags_from_path
 from magika import Magika
 from markitdown import MarkItDown
 from puremagic import PureError
 from puremagic import from_file as puremagic_from_file
 
-_ALWAYS_EXCLUDE: frozenset[str] = frozenset(
-    {
-        ".git",
-        ".venv",
-        "venv",
-        "__pycache__",
-        ".pytest_cache",
-        ".mypy_cache",
-        ".ruff_cache",
-        ".pyright",
-        "node_modules",
-        ".eggs",
-        "dist",
-        "build",
-        "htmlcov",
-    }
-)
 
-_TEXT_ENCODINGS: tuple[str, ...] = (
-    "utf-8",
-    "utf-8-sig",
-    "cp1252",
-    "latin-1",
-)
+class ContainsEnumMeta(EnumMeta):
+    @override
+    def __contains__(cls, value):
+        return value in cls._value2member_map_
 
-_TEXT_APPLICATION_MIME_TYPES: frozenset[str] = frozenset(
-    {
-        "application/json",
-        "application/xml",
-        "application/ecmascript",
-        "application/javascript",
-        "application/x-javascript",
-        "application/rtf",
-        "application/x-rtf",
-        "application/x-tex",
-        "application/x-texinfo",
-        "application/x-latex",
-        "application/x-tcl",
-        "application/x-csh",
-        "application/x-ksh",
-        "application/x-lisp",
-        "application/x-sh",
-        "application/x-shellscript",
-        "application/x-wais-source",
-        "application/x-yaml",
-        "application/yaml",
-        "application/toml",
-        "application/sql",
-    }
-)
+
+class TextEncodings(StrEnum, metaclass=ContainsEnumMeta):
+    UTF8 = "utf-8"
+    UTF8_SIG = "utf-8-sig"
+    CP1252 = "cp1252"
+    LATIN1 = "latin-1"
+
+
+class TextApplicationMimeTypes(StrEnum, metaclass=ContainsEnumMeta):
+    JSON = "application/json"
+    XML = "application/xml"
+    ECMASCRIPT = "application/ecmascript"
+    JAVASCRIPT = "application/javascript"
+    X_JAVASCRIPT = "application/x-javascript"
+    RTF = "application/rtf"
+    X_RTF = "application/x-rtf"
+    X_TEX = "application/x-tex"
+    X_TEXINFO = "application/x-texinfo"
+    X_LATEX = "application/x-latex"
+    X_TCL = "application/x-tcl"
+    X_CSH = "application/x-csh"
+    X_KSH = "application/x-ksh"
+    X_LISP = "application/x-lisp"
+    X_SH = "application/x-sh"
+    X_SHELLSCRIPT = "application/x-shellscript"
+    X_WAIS_SOURCE = "application/x-wais-source"
+    X_YAML = "application/x-yaml"
+    YAML = "application/yaml"
+    TOML = "application/toml"
+    SQL = "application/sql"
+
+
+class AlwaysExclude(StrEnum, metaclass=ContainsEnumMeta):
+    GIT = ".git"
+    VENV = "venv"
+    PY_CACHE = "__pycache__"
+    PYTEST_CACHE = ".pytest_cache"
+    MYPY_CACHE = ".mypy_cache"
+    RUFF_CACHE = ".ruff_cache"
+    PYRIGHT = ".pyright"
+    NODE_MODULES = "node_modules"
+    EGGS = ".eggs"
+    DIST = "dist"
+    BUILD = "build"
+    HTMLCOV = "htmlcov"
 
 
 class BundleReadError(RuntimeError):
@@ -110,7 +117,7 @@ def _is_text_file(path: Path) -> bool:
     mime = mime.lower()
     if mime.startswith("text/"):
         return True
-    if mime in _TEXT_APPLICATION_MIME_TYPES:
+    if mime in TextApplicationMimeTypes:
         return True
     if mime.endswith("+json") or mime.endswith("+xml") or mime.endswith("+yaml"):
         return True
@@ -143,7 +150,7 @@ def _read_text_file(path: Path) -> str:
         except UnicodeDecodeError:
             pass
 
-    for encoding in _TEXT_ENCODINGS:
+    for encoding in TextEncodings:
         try:
             return data.decode(encoding)
         except UnicodeDecodeError:
@@ -218,12 +225,9 @@ class RepoBundler:
         max_file_size: int = 1_000_000,
         extra_ignore_patterns: list[str] | None = None,
     ) -> None:
-        self._repo_path: Path
-        self._respect_gitignore: bool
-        self._max_file_size: int
-        self._repo_path = repo_path.resolve()
-        self._respect_gitignore = respect_gitignore
-        self._max_file_size = max_file_size
+        self._repo_path: Path = repo_path.resolve()
+        self._respect_gitignore: bool = respect_gitignore
+        self._max_file_size: int = max_file_size
         self._extra_spec: pathspec.PathSpec = pathspec.PathSpec.from_lines("gitignore", extra_ignore_patterns or [])
 
     def _candidate_files(self) -> list[Path]:
@@ -238,7 +242,7 @@ class RepoBundler:
             if not path.is_file():
                 continue
             rel = path.relative_to(self._repo_path)
-            if any(part in _ALWAYS_EXCLUDE for part in rel.parts):
+            if any(part in AlwaysExclude for part in rel.parts):
                 continue
             rel_str = str(rel)
             if gitignore_spec.match_file(rel_str):
@@ -293,7 +297,7 @@ class RepoBundler:
         """
         return _build_tree_str(files, self._repo_path)
 
-    def bundle(self) -> str:
+    def bundle(self, *, show_progress: bool = False) -> str:
         """Bundle the repository and return a well-formed XML string.
 
         >>> import tempfile, pathlib
@@ -306,15 +310,32 @@ class RepoBundler:
         """
         included_files: list[tuple[Path, str]] = []
         converter = MarkItDown()
-        for file_path in self._candidate_files():
+        candidate_files = self._candidate_files()
+
+        def _process_file(file_path: Path) -> None:
             if _is_text_file(file_path):
                 content = _read_text_file(file_path)
             else:
                 markdown = _convert_file_to_markdown(file_path, converter)
                 if markdown is None:
-                    continue
+                    return
                 content = markdown
             included_files.append((file_path, content))
+
+        if show_progress and candidate_files:
+            with alive_bar(
+                len(candidate_files),
+                title="Bundling files",
+                file=sys.stderr,
+                enrich_print=False,
+            ) as bar:
+                progress = cast(Any, bar)
+                for file_path in candidate_files:
+                    _process_file(file_path)
+                    progress()
+        else:
+            for file_path in candidate_files:
+                _process_file(file_path)
 
         files = [path for path, _ in included_files]
         tree_str = self.build_file_tree(files)

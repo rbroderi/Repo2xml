@@ -75,8 +75,9 @@ def test_main_returns_error_for_bundle_read_failure(
 ) -> None:
     (tmp_path / "hello.py").write_text("print('hello')\n", encoding="utf-8")
 
-    def _raise_bundle_read_error(self: RepoBundler) -> str:
+    def _raise_bundle_read_error(self: RepoBundler, *, show_progress: bool = False) -> str:
         del self
+        del show_progress
         raise BundleReadError("failed to read file.txt: boom")
 
     monkeypatch.setattr(RepoBundler, "bundle", _raise_bundle_read_error)
@@ -142,3 +143,51 @@ def test_main_prints_xml_when_stdout_is_tty(tmp_path: Path, monkeypatch: pytest.
     output = fake_stdout.getvalue()
     assert "<?xml" in output
     assert "tty.py" in output
+
+
+def test_main_enables_progress_when_stderr_is_tty(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    (tmp_path / "progress.py").write_text("x = 1\n", encoding="utf-8")
+    seen: list[bool] = []
+
+    def _fake_bundle(self: RepoBundler, *, show_progress: bool = False) -> str:
+        del self
+        seen.append(show_progress)
+        return '<?xml version="1.0" encoding="UTF-8"?>\n<repository/>'
+
+    class _TtyStderr(io.StringIO):
+        @override
+        def isatty(self) -> bool:
+            return True
+
+    monkeypatch.setattr(RepoBundler, "bundle", _fake_bundle)
+    monkeypatch.setattr(sys, "stderr", _TtyStderr())
+    monkeypatch.setattr(sys, "argv", ["repo2xml", "--repo-path", str(tmp_path)])
+
+    result = cli.main()
+
+    assert result == cli.OK
+    assert seen == [True]
+
+
+def test_main_disables_progress_when_stderr_is_not_tty(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    (tmp_path / "no_progress.py").write_text("x = 1\n", encoding="utf-8")
+    seen: list[bool] = []
+
+    def _fake_bundle(self: RepoBundler, *, show_progress: bool = False) -> str:
+        del self
+        seen.append(show_progress)
+        return '<?xml version="1.0" encoding="UTF-8"?>\n<repository/>'
+
+    class _PipeStderr(io.StringIO):
+        @override
+        def isatty(self) -> bool:
+            return False
+
+    monkeypatch.setattr(RepoBundler, "bundle", _fake_bundle)
+    monkeypatch.setattr(sys, "stderr", _PipeStderr())
+    monkeypatch.setattr(sys, "argv", ["repo2xml", "--repo-path", str(tmp_path)])
+
+    result = cli.main()
+
+    assert result == cli.OK
+    assert seen == [False]

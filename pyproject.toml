@@ -1,6 +1,6 @@
 [project]
 name = "repo2xml"
-version = "2026.4.12.1"
+version = "2026.4.12.2"
 description = "Bundle a repository into a single XML file for LLMs."
 readme = "README.md"
 license = "Apache-2.0"
@@ -13,6 +13,7 @@ classifiers = [
   "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
+  "alive-progress>=3.3.0",
   "beartype>=0.22.9",
   "identify>=2.6.18",
   "magika>=0.6.3",
