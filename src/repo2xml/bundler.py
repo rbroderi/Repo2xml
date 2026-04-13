@@ -6,17 +6,27 @@ from enum import EnumMeta
 from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
+from typing import Annotated
 from typing import Any
+from typing import Final
 from typing import cast
 from typing import override
 
 import pathspec
 from alive_progress import alive_bar
+from beartype.vale import Is
 from identify.identify import tags_from_path
 from magika import Magika
 from markitdown import MarkItDown
 from puremagic import PureError
 from puremagic import from_file as puremagic_from_file
+
+
+def _is_positive_int(x: Any) -> bool:
+    return isinstance(x, int) and x > 0
+
+
+Bytes = Is[_is_positive_int]
 
 
 class ContainsEnumMeta(EnumMeta):
@@ -217,12 +227,14 @@ class RepoBundler:
     True
     """
 
+    DEFAULT_MAX_FILE_SIZE: Final[Annotated[int, Bytes]] = 1 * 1024 * 1024
+
     def __init__(
         self,
         repo_path: Path,
         *,
         respect_gitignore: bool = True,
-        max_file_size: int = 1_000_000,
+        max_file_size: Annotated[int, Bytes] = DEFAULT_MAX_FILE_SIZE,
         extra_ignore_patterns: list[str] | None = None,
     ) -> None:
         self._repo_path: Path = repo_path.resolve()
@@ -376,7 +388,7 @@ def bundle_repo(
     *,
     output_path: str | Path | None = None,
     respect_gitignore: bool = True,
-    max_file_size: int = 1_000_000,
+    max_file_size: int = RepoBundler.DEFAULT_MAX_FILE_SIZE,
     extra_ignore_patterns: list[str] | None = None,
 ) -> str:
     """Bundle a repository into a single XML string.
