@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import importlib.metadata
 import io
 import os
 import subprocess
@@ -18,35 +17,11 @@ from repo2xml.bundler import BundleReadError
 from repo2xml.bundler import RepoBundler
 
 
-def test_resolve_version_from_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
-    def _fake_version(_name: str) -> str:
-        return "1.2.3"
-
-    monkeypatch.setattr(importlib.metadata, "version", _fake_version)
-
-    version = cli._resolve_version()  # pyright: ignore[reportPrivateUsage]
-
-    assert version == "1.2.3"
-
-
-def test_resolve_version_returns_unknown_when_metadata_missing(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    def _raise_not_found(_name: str) -> str:
-        raise importlib.metadata.PackageNotFoundError()
-
-    monkeypatch.setattr(importlib.metadata, "version", _raise_not_found)
-
-    version = cli._resolve_version()  # pyright: ignore[reportPrivateUsage]
-
-    assert version == "unknown"
-
-
 def test_main_version_flag_prints_version(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    monkeypatch.setattr(cli, "_resolve_version", lambda: "9.9.9")
+    monkeypatch.setattr(cli, "get_version", lambda: "9.9.9")
     parser = cli._build_parser()  # pyright: ignore[reportPrivateUsage]
 
     with pytest.raises(SystemExit) as exc:
@@ -61,7 +36,7 @@ def test_main_short_version_flag_prints_version(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    monkeypatch.setattr(cli, "_resolve_version", lambda: "9.9.8")
+    monkeypatch.setattr(cli, "get_version", lambda: "9.9.8")
     parser = cli._build_parser()  # pyright: ignore[reportPrivateUsage]
 
     with pytest.raises(SystemExit) as exc:

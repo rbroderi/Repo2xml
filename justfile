@@ -20,6 +20,10 @@ test:
 test-cov:
     uv run pytest --doctest-modules --cov=src/repo2xml --cov-report=term-missing
 
+# Audit dependencies for known vulnerabilities
+pip-audit:
+    uv run pip-audit .
+
 # Build standalone executable with PyInstaller
 build:
     if (Test-Path build) { Remove-Item -Recurse -Force build }

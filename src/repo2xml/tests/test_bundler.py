@@ -1,6 +1,8 @@
 """Functional tests for repo2xml bundler."""
 
+import importlib.metadata
 import tempfile
+import xml.etree.ElementTree as ET
 from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
@@ -14,6 +16,7 @@ from repo2xml.bundler import RepoBundler
 from repo2xml.bundler import _is_text_file  # pyright: ignore[reportPrivateUsage]
 from repo2xml.bundler import _read_text_file  # pyright: ignore[reportPrivateUsage]
 from repo2xml.bundler import bundle_repo
+from repo2xml.bundler import get_version
 
 
 def test_bundle_produces_valid_xml() -> None:
@@ -23,8 +26,10 @@ def test_bundle_produces_valid_xml() -> None:
         (repo / "README.md").write_text("# Hello\n", encoding="utf-8")
 
         result = RepoBundler(repo).bundle()
+        parsed = ET.fromstring(result)
 
         assert result.startswith("<?xml")
+        assert parsed.tag == "repository"
         assert "<repository>" in result
         assert "hello.py" in result
         assert "README.md" in result
@@ -58,17 +63,20 @@ def test_bundle_includes_markitdown_conversion(
         def _always_non_text(_path: Path) -> bool:
             return False
 
-        def _fake_convert_local(self: object, file_path: str) -> Any:
-            del self
-            if file_path.endswith("diagram.bin"):
-                return SimpleNamespace(
-                    markdown="# Converted\n\nfrom binary",
-                    text_content="# Converted\n\nfrom binary",
-                )
-            return SimpleNamespace(markdown="", text_content="")
+        class _FakeConverter:
+            def convert_local(self, file_path: str) -> Any:
+                if file_path.endswith("diagram.bin"):
+                    return SimpleNamespace(
+                        markdown="# Converted\n\nfrom binary",
+                        text_content="# Converted\n\nfrom binary",
+                    )
+                return SimpleNamespace(markdown="", text_content="")
+
+        def _fake_converter_factory() -> object:
+            return _FakeConverter()
 
         monkeypatch.setattr("repo2xml.bundler._is_text_file", _always_non_text)
-        monkeypatch.setattr("repo2xml.bundler.MarkItDown.convert_local", _fake_convert_local)
+        monkeypatch.setattr("repo2xml.bundler._create_markdown_converter", _fake_converter_factory)
 
         result = RepoBundler(repo).bundle()
 
@@ -86,13 +94,16 @@ def test_bundle_skips_markitdown_unsupported_file(
         def _always_non_text(_path: Path) -> bool:
             return False
 
-        def _failing_convert_local(self: object, file_path: str) -> Any:
-            del self
-            del file_path
-            raise RuntimeError("unsupported")
+        class _FailingConverter:
+            def convert_local(self, file_path: str) -> Any:
+                del file_path
+                raise RuntimeError("unsupported")
+
+        def _failing_converter_factory() -> object:
+            return _FailingConverter()
 
         monkeypatch.setattr("repo2xml.bundler._is_text_file", _always_non_text)
-        monkeypatch.setattr("repo2xml.bundler.MarkItDown.convert_local", _failing_convert_local)
+        monkeypatch.setattr("repo2xml.bundler._create_markdown_converter", _failing_converter_factory)
 
         result = RepoBundler(repo).bundle()
 
@@ -631,3 +642,41 @@ def test_bundle_without_progress_does_not_create_alive_bar(
         xml = bundler.bundle(show_progress=False)
 
         assert "a.py" in xml
+
+
+def test_bundle_includes_repo2xml_settings_section(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        repo = Path(tmpdir)
+        (repo / ".gitignore").write_text("*.secret\n", encoding="utf-8")
+        (repo / "app.py").write_text("x = 1\n", encoding="utf-8")
+
+        monkeypatch.setattr("repo2xml.bundler.get_version", lambda: "9.9.9")
+
+        xml = RepoBundler(
+            repo,
+            respect_gitignore=True,
+            max_file_size=123,
+            extra_ignore_patterns=["*.tmp"],
+        ).bundle()
+
+        assert "<repo2xml_settings>" in xml
+        assert "<repo2xml_version>9.9.9</repo2xml_version>" in xml
+        assert "<respect_gitignore>true</respect_gitignore>" in xml
+        assert "<max_file_size_bytes>123</max_file_size_bytes>" in xml
+        assert '<gitignore_patterns enabled="true">' in xml
+        assert "<pattern>*.secret</pattern>" in xml
+        assert "<extra_ignore_patterns>" in xml
+        assert "<pattern>*.tmp</pattern>" in xml
+
+
+def test_repo2xml_version_returns_unknown_when_package_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _raise_not_found(_name: str) -> str:
+        raise importlib.metadata.PackageNotFoundError
+
+    monkeypatch.setattr(importlib.metadata, "version", _raise_not_found)
+
+    assert get_version() == "unknown"

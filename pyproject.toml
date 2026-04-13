@@ -1,6 +1,6 @@
 [project]
 name = "repo2xml"
-version = "2026.4.12.3"
+version = "2026.4.13.0"
 description = "Bundle a repository into a single XML file for LLMs."
 readme = "README.md"
 license = "Apache-2.0"
@@ -15,7 +15,9 @@ classifiers = [
 dependencies = [
   "alive-progress>=3.3.0",
   "beartype>=0.22.9",
+  "defusedxml>=0.7.1",
   "identify>=2.6.18",
+  "lazi>=1.9.161",
   "magika>=0.6.3",
   "markitdown[all]>=0.1.5",
   "pathspec>=0.12.1",
@@ -27,6 +29,7 @@ repo2xml = "repo2xml.__main__:main"
 
 [project.optional-dependencies]
 dev = [
+  "pip-audit>=2.10.0",
   "prek>=0.3.8",
   "pyinstaller>=6.19.0",
   "pytest>=9.0.3",

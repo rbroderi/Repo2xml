@@ -1,7 +1,6 @@
 """Core repository bundling logic."""
 
 import sys
-import xml.etree.ElementTree as ET
 from enum import EnumMeta
 from enum import StrEnum
 from functools import lru_cache
@@ -12,14 +11,19 @@ from typing import Final
 from typing import cast
 from typing import override
 
-import pathspec
-from alive_progress import alive_bar
 from beartype.vale import Is
-from identify.identify import tags_from_path
-from magika import Magika
-from markitdown import MarkItDown
-from puremagic import PureError
-from puremagic import from_file as puremagic_from_file
+from lazi.core import lazi
+
+with lazi:
+    import importlib.metadata
+    import xml.etree.ElementTree as ET
+
+    import pathspec
+    from alive_progress import alive_bar
+    from identify.identify import tags_from_path
+    from magika import Magika
+    from puremagic import PureError
+    from puremagic import from_file as puremagic_from_file
 
 
 def _is_positive_int(x: Any) -> bool:
@@ -86,22 +90,34 @@ class BundleReadError(RuntimeError):
 
 
 @lru_cache(maxsize=1)
+def get_version() -> str:
+    try:
+        return importlib.metadata.version("repo2xml")
+    except importlib.metadata.PackageNotFoundError:
+        return "unknown"
+
+
+@lru_cache(maxsize=1)
 def _get_magika() -> Magika:
     """Return a cached Magika instance for file type detection."""
     return Magika()
 
 
+def _load_gitignore_patterns(repo_path: Path) -> list[str]:
+    gitignore = repo_path / ".gitignore"
+    if not gitignore.exists():
+        return []
+    try:
+        lines = gitignore.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError as exc:
+        msg = f"failed to read {gitignore}: {exc}"
+        raise BundleReadError(msg) from exc
+    return [line.strip() for line in lines if line.strip() and not line.lstrip().startswith("#")]
+
+
 def _load_gitignore_spec(repo_path: Path) -> pathspec.PathSpec:
     """Load .gitignore patterns from *repo_path* and return a :class:`pathspec.PathSpec`."""
-    gitignore = repo_path / ".gitignore"
-    if gitignore.exists():
-        try:
-            patterns = gitignore.read_text(encoding="utf-8", errors="replace").splitlines()
-        except OSError as exc:
-            msg = f"failed to read {gitignore}: {exc}"
-            raise BundleReadError(msg) from exc
-    else:
-        patterns = []
+    patterns = _load_gitignore_patterns(repo_path)
     return pathspec.PathSpec.from_lines("gitignore", patterns)
 
 
@@ -170,7 +186,14 @@ def _read_text_file(path: Path) -> str:
     raise BundleReadError(msg)
 
 
-def _convert_file_to_markdown(path: Path, converter: MarkItDown) -> str | None:
+def _create_markdown_converter() -> Any:
+    # Import on demand to avoid import-time failures from optional converter extras.
+    from markitdown import MarkItDown
+
+    return MarkItDown()
+
+
+def _convert_file_to_markdown(path: Path, converter: Any) -> str | None:
     """Convert *path* to Markdown when supported; return ``None`` when unsupported."""
     try:
         result = converter.convert_local(str(path))
@@ -240,6 +263,7 @@ class RepoBundler:
         self._repo_path: Path = repo_path.resolve()
         self._respect_gitignore: bool = respect_gitignore
         self._max_file_size: int = max_file_size
+        self._extra_ignore_patterns: list[str] = extra_ignore_patterns or []
         self._extra_spec: pathspec.PathSpec = pathspec.PathSpec.from_lines("gitignore", extra_ignore_patterns or [])
 
     def _candidate_files(self) -> list[Path]:
@@ -321,7 +345,7 @@ class RepoBundler:
         True
         """
         included_files: list[tuple[Path, str]] = []
-        converter = MarkItDown()
+        converter = _create_markdown_converter()
         candidate_files = self._candidate_files()
 
         def _process_file(file_path: Path) -> None:
@@ -353,6 +377,26 @@ class RepoBundler:
         tree_str = self.build_file_tree(files)
 
         root = ET.Element("repository")
+
+        settings = ET.SubElement(root, "repo2xml_settings")
+        ET.SubElement(settings, "repo2xml_version").text = get_version()
+        bundler_settings = ET.SubElement(settings, "bundler")
+        ET.SubElement(bundler_settings, "respect_gitignore").text = str(self._respect_gitignore).lower()
+        ET.SubElement(bundler_settings, "max_file_size_bytes").text = str(self._max_file_size)
+
+        ignored = ET.SubElement(bundler_settings, "ignored_patterns")
+        gitignore_patterns_elem = ET.SubElement(
+            ignored,
+            "gitignore_patterns",
+            enabled=str(self._respect_gitignore).lower(),
+        )
+        if self._respect_gitignore:
+            for pattern in _load_gitignore_patterns(self._repo_path):
+                ET.SubElement(gitignore_patterns_elem, "pattern").text = pattern
+
+        extra_patterns_elem = ET.SubElement(ignored, "extra_ignore_patterns")
+        for pattern in self._extra_ignore_patterns:
+            ET.SubElement(extra_patterns_elem, "pattern").text = pattern
 
         summary = ET.SubElement(root, "file_summary")
         ET.SubElement(summary, "purpose").text = (

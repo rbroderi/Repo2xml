@@ -1,22 +1,15 @@
 """Command-line interface for repo2xml."""
 
 import argparse
-import importlib.metadata
 import sys
 from pathlib import Path
 
 from repo2xml.bundler import BundleReadError
 from repo2xml.bundler import RepoBundler
+from repo2xml.bundler import get_version
 
 OK = 0
 ERROR = 1
-
-
-def _resolve_version() -> str:
-    try:
-        return importlib.metadata.version("repo2xml")
-    except importlib.metadata.PackageNotFoundError:
-        return "unknown"
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -28,7 +21,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "-v",
         "--version",
         action="version",
-        version=f"%(prog)s {_resolve_version()}",
+        version=f"%(prog)s {get_version()}",
         help="Show program version and exit",
     )
     parser.add_argument(
