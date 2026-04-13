@@ -41,6 +41,8 @@ jobs:
       contents: read
       id-token: write
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
       - name: Download distributions artifact
         uses: actions/download-artifact@v8
         with:
