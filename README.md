@@ -38,7 +38,16 @@ repo2xml --repo-path /path/to/repo -o repo.xml
 
 # Skip .gitignore and add extra exclusions
 repo2xml --repo-path /path/to/repo --no-gitignore --ignore "*.log" --ignore "tests/"
+
+# Control progress display explicitly
+repo2xml --repo-path /path/to/repo --progress
+repo2xml --repo-path /path/to/repo --no-progress
 ```
+
+When running in an interactive terminal,
+`repo2xml` auto-enables a progress bar.
+Progress is written to stderr, so XML output stays clean
+for `-o FILE` and stdout redirection.
 
 ### Python API
 

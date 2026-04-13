@@ -1,6 +1,6 @@
 [project]
 name = "repo2xml"
-version = "2026.4.12.2"
+version = "2026.4.12.3"
 description = "Bundle a repository into a single XML file for LLMs."
 readme = "README.md"
 license = "Apache-2.0"
@@ -58,6 +58,7 @@ reportUnknownMemberType = "none"
 [tool.ruff]
 line-length = 120
 target-version = "py313"
+
 
 [tool.ruff.lint.isort]
 force-single-line = true

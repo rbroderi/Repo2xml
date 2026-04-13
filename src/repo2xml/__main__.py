@@ -1,6 +1,7 @@
 """Command-line interface for repo2xml."""
 
 import argparse
+import importlib.metadata
 import sys
 from pathlib import Path
 
@@ -11,10 +12,24 @@ OK = 0
 ERROR = 1
 
 
+def _resolve_version() -> str:
+    try:
+        return importlib.metadata.version("repo2xml")
+    except importlib.metadata.PackageNotFoundError:
+        return "unknown"
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="repo2xml",
         description="Bundle a repository into a single XML file for LLMs.",
+    )
+    parser.add_argument(
+        "-v",
+        "--version",
+        action="version",
+        version=f"%(prog)s {_resolve_version()}",
+        help="Show program version and exit",
     )
     parser.add_argument(
         "-p",
@@ -47,6 +62,12 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="PATTERN",
         help="Extra gitignore-style pattern to exclude (repeatable)",
     )
+    parser.add_argument(
+        "--progress",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Show progress bar during bundling (default: auto-detect interactive terminal)",
+    )
     return parser
 
 
@@ -66,7 +87,10 @@ def main() -> int:
         max_file_size=args.max_file_size,
         extra_ignore_patterns=args.ignore,
     )
-    show_progress = sys.stderr.isatty()
+    if args.progress is None:
+        show_progress = sys.stderr.isatty() or sys.stdout.isatty()
+    else:
+        show_progress = args.progress
     try:
         xml_content = bundler.bundle(show_progress=show_progress)
     except BundleReadError as exc:

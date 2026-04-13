@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import importlib.metadata
 import io
 import os
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 from typing import override
 
@@ -14,6 +16,77 @@ import pytest
 from repo2xml import __main__ as cli
 from repo2xml.bundler import BundleReadError
 from repo2xml.bundler import RepoBundler
+
+
+def test_resolve_version_from_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _fake_version(_name: str) -> str:
+        return "1.2.3"
+
+    monkeypatch.setattr(importlib.metadata, "version", _fake_version)
+
+    version = cli._resolve_version()  # pyright: ignore[reportPrivateUsage]
+
+    assert version == "1.2.3"
+
+
+def test_resolve_version_returns_unknown_when_metadata_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _raise_not_found(_name: str) -> str:
+        raise importlib.metadata.PackageNotFoundError()
+
+    monkeypatch.setattr(importlib.metadata, "version", _raise_not_found)
+
+    version = cli._resolve_version()  # pyright: ignore[reportPrivateUsage]
+
+    assert version == "unknown"
+
+
+def test_main_version_flag_prints_version(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(cli, "_resolve_version", lambda: "9.9.9")
+    parser = cli._build_parser()  # pyright: ignore[reportPrivateUsage]
+
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["--version"])
+
+    captured = capsys.readouterr()
+    assert exc.value.code == 0
+    assert "repo2xml 9.9.9" in captured.out
+
+
+def test_main_short_version_flag_prints_version(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(cli, "_resolve_version", lambda: "9.9.8")
+    parser = cli._build_parser()  # pyright: ignore[reportPrivateUsage]
+
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["-v"])
+
+    captured = capsys.readouterr()
+    assert exc.value.code == 0
+    assert "repo2xml 9.9.8" in captured.out
+
+
+def test_uvx_refresh_local_project_version_outside_repo_cwd(tmp_path: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    pyproject = tomllib.loads((repo_root / "pyproject.toml").read_text(encoding="utf-8"))
+    expected = pyproject["project"]["version"]
+
+    result = subprocess.run(
+        ["uvx", "--refresh", str(repo_root), "--version"],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert f"repo2xml {expected}" in result.stdout
 
 
 def test_main_prints_xml_to_stdout(
@@ -183,9 +256,111 @@ def test_main_disables_progress_when_stderr_is_not_tty(tmp_path: Path, monkeypat
         def isatty(self) -> bool:
             return False
 
+    class _PipeStdout:
+        def __init__(self) -> None:
+            self._buffer: io.BytesIO = io.BytesIO()
+
+        @property
+        def buffer(self) -> io.BytesIO:
+            return self._buffer
+
+        def isatty(self) -> bool:
+            return False
+
     monkeypatch.setattr(RepoBundler, "bundle", _fake_bundle)
     monkeypatch.setattr(sys, "stderr", _PipeStderr())
+    monkeypatch.setattr(sys, "stdout", _PipeStdout())
     monkeypatch.setattr(sys, "argv", ["repo2xml", "--repo-path", str(tmp_path)])
+
+    result = cli.main()
+
+    assert result == cli.OK
+    assert seen == [False]
+
+
+def test_main_enables_progress_when_stdout_is_tty(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    (tmp_path / "stdout_progress.py").write_text("x = 1\n", encoding="utf-8")
+    seen: list[bool] = []
+
+    def _fake_bundle(self: RepoBundler, *, show_progress: bool = False) -> str:
+        del self
+        seen.append(show_progress)
+        return '<?xml version="1.0" encoding="UTF-8"?>\n<repository/>'
+
+    class _PipeStderr(io.StringIO):
+        @override
+        def isatty(self) -> bool:
+            return False
+
+    class _TtyStdout(io.StringIO):
+        @override
+        def isatty(self) -> bool:
+            return True
+
+    monkeypatch.setattr(RepoBundler, "bundle", _fake_bundle)
+    monkeypatch.setattr(sys, "stderr", _PipeStderr())
+    monkeypatch.setattr(sys, "stdout", _TtyStdout())
+    monkeypatch.setattr(sys, "argv", ["repo2xml", "--repo-path", str(tmp_path)])
+
+    result = cli.main()
+
+    assert result == cli.OK
+    assert seen == [True]
+
+
+def test_main_progress_flag_overrides_auto_detection(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    (tmp_path / "force_progress.py").write_text("x = 1\n", encoding="utf-8")
+    seen: list[bool] = []
+
+    def _fake_bundle(self: RepoBundler, *, show_progress: bool = False) -> str:
+        del self
+        seen.append(show_progress)
+        return '<?xml version="1.0" encoding="UTF-8"?>\n<repository/>'
+
+    class _PipeStderr(io.StringIO):
+        @override
+        def isatty(self) -> bool:
+            return False
+
+    class _PipeStdout:
+        def __init__(self) -> None:
+            self._buffer: io.BytesIO = io.BytesIO()
+
+        @property
+        def buffer(self) -> io.BytesIO:
+            return self._buffer
+
+        def isatty(self) -> bool:
+            return False
+
+    monkeypatch.setattr(RepoBundler, "bundle", _fake_bundle)
+    monkeypatch.setattr(sys, "stderr", _PipeStderr())
+    monkeypatch.setattr(sys, "stdout", _PipeStdout())
+    monkeypatch.setattr(sys, "argv", ["repo2xml", "--repo-path", str(tmp_path), "--progress"])
+
+    result = cli.main()
+
+    assert result == cli.OK
+    assert seen == [True]
+
+
+def test_main_no_progress_flag_overrides_auto_detection(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    (tmp_path / "force_no_progress.py").write_text("x = 1\n", encoding="utf-8")
+    seen: list[bool] = []
+
+    def _fake_bundle(self: RepoBundler, *, show_progress: bool = False) -> str:
+        del self
+        seen.append(show_progress)
+        return '<?xml version="1.0" encoding="UTF-8"?>\n<repository/>'
+
+    class _TtyStderr(io.StringIO):
+        @override
+        def isatty(self) -> bool:
+            return True
+
+    monkeypatch.setattr(RepoBundler, "bundle", _fake_bundle)
+    monkeypatch.setattr(sys, "stderr", _TtyStderr())
+    monkeypatch.setattr(sys, "argv", ["repo2xml", "--repo-path", str(tmp_path), "--no-progress"])
 
     result = cli.main()
 

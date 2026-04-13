@@ -1,7 +1,8 @@
 from PyInstaller.utils.hooks import collect_data_files
 from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import copy_metadata
 
-datas = collect_data_files("magika")
+datas = collect_data_files("magika") + copy_metadata("repo2xml")
 hiddenimports = collect_submodules("markitdown")
 
 
