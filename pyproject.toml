@@ -15,7 +15,6 @@ classifiers = [
 dependencies = [
   "alive-progress>=3.3.0",
   "beartype>=0.22.9",
-  "defusedxml>=0.7.1",
   "identify>=2.6.18",
   "lazi>=1.9.161",
   "magika>=0.6.3",

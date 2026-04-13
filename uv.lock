@@ -1447,7 +1447,6 @@ source = { editable = "." }
 dependencies = [
     { name = "alive-progress" },
     { name = "beartype" },
-    { name = "defusedxml" },
     { name = "identify" },
     { name = "lazi" },
     { name = "magika" },
@@ -1471,7 +1470,6 @@ dev = [
 requires-dist = [
     { name = "alive-progress", specifier = ">=3.3.0" },
     { name = "beartype", specifier = ">=0.22.9" },
-    { name = "defusedxml", specifier = ">=0.7.1" },
     { name = "identify", specifier = ">=2.6.18" },
     { name = "lazi", specifier = ">=1.9.161" },
     { name = "magika", specifier = ">=0.6.3" },

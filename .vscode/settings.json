@@ -15,5 +15,6 @@
   },
   "cSpell.words": [
     "data"
-  ]
+  ],
+  "terminal.integrated.suggest.enabled": true
 }
