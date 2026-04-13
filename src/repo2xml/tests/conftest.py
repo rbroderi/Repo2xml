@@ -1,7 +1,5 @@
 """Shared pytest fixtures for repo2xml tests."""
 
-from __future__ import annotations
-
 import pytest
 
 from repo2xml.bundler import get_version
