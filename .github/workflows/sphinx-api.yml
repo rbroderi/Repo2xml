@@ -1,29 +1,26 @@
-name: Docs
+name: Sphinx API Docs
 "on":
+  pull_request:
+    paths:
+      - src/**
+      - docs_sphinx/**
+      - justfile
+      - pyproject.toml
+      - uv.lock
   push:
     branches: [main]
     paths:
       - src/**
-      - src/**
-      - docs/**
       - docs_sphinx/**
-      - docs_sphinx/**
-      - zensical.toml
       - justfile
-      - .github/workflows/docs.yml
       - pyproject.toml
       - uv.lock
   workflow_dispatch:
 permissions:
   contents: read
-  pages: write
-  id-token: write
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -33,24 +30,11 @@ jobs:
           python-version: "3.13"
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
-      - name: Install docs dependencies
-        run: uv sync --extra docs
-      - name: Build API docs with Sphinx
+      - name: Build automatic Sphinx API docs
         run: |
+          uv sync --extra docs
           rm -rf docs_sphinx/apidoc
           rm -rf docs_sphinx/generated
-          rm -rf docs/api
           SPHINX_APIDOC_OPTIONS=show-inheritance uv run sphinx-apidoc -f --remove-old -o docs_sphinx/apidoc src/repo2xml src/repo2xml/tests
           find docs_sphinx/apidoc -name '*.rst' -type f -exec sed -i '/^[[:space:]]*:members:$/d;/^[[:space:]]*:undoc-members:$/d' {} +
-          uv run sphinx-build -b html docs_sphinx docs/api
-      - name: Build docs
-        run: uv run zensical build --clean
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v4
-        with:
-          path: site
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          uv run sphinx-build -b html docs_sphinx docs_sphinx/_build/html
