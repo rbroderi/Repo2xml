@@ -17,7 +17,7 @@ def _print_excluded_paths(extra_patterns: list[str], include_patterns: list[str]
     excluded_dirs = ", ".join(value.value for value in DefaultExclude)
     extra = ", ".join(extra_patterns) if extra_patterns else "(none)"
     include = ", ".join(include_patterns) if include_patterns else "(none)"
-    print(f"Excluding directories: {excluded_dirs}", file=sys.stderr)
+    print(f"Excluding directories/files: {excluded_dirs}", file=sys.stderr)
     print(f"Extra exclude patterns: {extra}", file=sys.stderr)
     print(f"Include override patterns: {include}", file=sys.stderr)
 

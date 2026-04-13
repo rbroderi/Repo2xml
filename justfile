@@ -20,6 +20,16 @@ test:
 test-cov:
     uv run pytest --doctest-modules --cov=src/repo2xml --cov-report=term-missing
 
+# Build documentation site with Zensical
+docs-build:
+    uv sync --extra docs
+    uv run zensical build --clean
+
+# Serve documentation locally with live reload
+docs-serve:
+    uv sync --extra docs
+    uv run zensical serve
+
 # Audit dependencies for known vulnerabilities
 pip-audit:
     uv run pip-audit .

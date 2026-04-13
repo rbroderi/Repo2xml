@@ -270,7 +270,7 @@ def test_main_prints_excluded_paths_in_interactive_console(tmp_path: Path, monke
 
     assert result == cli.OK
     stderr_output = fake_stderr.getvalue()
-    assert "Excluding directories:" in stderr_output
+    assert "Excluding directories" in stderr_output
     assert ".git" in stderr_output
     assert "Extra exclude patterns:" in stderr_output
     assert "*.tmp" in stderr_output

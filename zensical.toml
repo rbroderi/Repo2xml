@@ -1,0 +1,16 @@
+[project]
+site_name = "repo2xml"
+site_description = "Documentation for repo2xml"
+site_author = "repo2xml contributors"
+copyright = "Copyright © 2026 The authors"
+
+[project.theme]
+language = "en"
+features = [
+  "content.code.copy",
+  "navigation.footer",
+  "navigation.instant",
+  "navigation.path",
+  "navigation.top",
+  "search.highlight",
+]

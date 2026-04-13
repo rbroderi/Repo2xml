@@ -25,6 +25,16 @@ Or with [uv](https://github.com/astral-sh/uv):
 uv tool install repo2xml
 ```
 
+## Documentation
+
+Project docs are built with Zensical from [docs/index.md](docs/index.md) using [zensical.toml](zensical.toml).
+
+If GitHub Pages is enabled for this repository, the published docs URL will be:
+
+- `https://<owner>.github.io/<repo>/`
+
+Deployment is handled by [docs workflow](.github/workflows/docs.yml).
+
 ## Usage
 
 ### CLI
@@ -110,6 +120,10 @@ just test-cov
 # Lint and format
 uvx ruff check src
 uvx ruff format src
+
+# Build and serve docs
+just docs-build
+just docs-serve
 
 # Build one-file executable via PyInstaller
 just build
